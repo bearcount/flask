@@ -20,7 +20,7 @@ community that make adding new functionality easy.
 ## A Simple Example
 
 ```python
-# save this as app.py
+# save this as app.py 入口
 from flask import Flask
 
 app = Flask(__name__)
