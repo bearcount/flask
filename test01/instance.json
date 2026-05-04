@@ -1,0 +1,29 @@
+{
+    "instance_id": "flask_template_cache_enhancement",
+    "repo": "https://github.com/pallets/flask",
+    "base_commit": "1f949e8347dd8f9cc6f0af1d67cfb8abfb71468d",
+    "head_commit": "159810874f5273a508d10083624fe4d91714ba58",
+    "language": "python",
+    "task_category": "feature_addition",
+    "problem_statement": "# 功能要求\n1. 增强 Flask 模板缓存配置选项\n2. 当前 TEMPLATES_AUTO_RELOAD 配置过于简单，无法满足生产环境的细粒度需求\n3. 新增配置项：\n   - TEMPLATE_CACHE_MODE (auto/hash/always/never)\n   - TEMPLATE_CACHE_SIZE (缓存大小限制)\n   - TEMPLATE_HASH_ALGO (内容哈希算法)\n4. 新增模板加载器：HashingFileSystemLoader，支持基于内容哈希的缓存验证\n5. 新增 LRU 缓存：LRUTemplateCache，支持大小限制的缓存\n6. 确保向后兼容，不破坏现有功能",
+    "FAIL_TO_PASS": [
+        "tests/test_templating.py::TestTemplateCaching::test_config_defaults",
+        "tests/test_templating.py::TestTemplateCaching::test_lru_cache",
+        "tests/test_templating.py::TestTemplateCaching::test_hashing_loader"
+    ],
+    "PASS_TO_PASS": [
+        "tests/test_templating.py::TestTemplateCaching::test_config_defaults",
+        "tests/test_templating.py::TestTemplateCaching::test_lru_cache",
+        "tests/test_templating.py::TestTemplateCaching::test_hashing_loader",
+        "tests/test_templating.py::test_templates_auto_reload",
+        "tests/test_templating.py::test_custom_template_loader"
+    ],
+    "patch": "diff --git a/src/flask/app.py b/src/flask/app.py\nindex 652b9bbf..f889130d 100644\n--- a/src/flask/app.py\n+++ b/src/flask/app.py\n@@ -236,6 +236,9 @@ class Flask(App):\n             \"EXPLAIN_TEMPLATE_LOADING\": False,\n             \"PREFERRED_URL_SCHEME\": \"http\",\n             \"TEMPLATES_AUTO_RELOAD\": None,\n+            \"TEMPLATE_CACHE_MODE\": \"auto\",\n+            \"TEMPLATE_CACHE_SIZE\": 200,\n+            \"TEMPLATE_HASH_ALGO\": \"md5\",\n             \"MAX_COOKIE_SIZE\": 4093,\n             \"PROVIDE_AUTOMATIC_OPTIONS\": True,\ndiff --git a/src/flask/templating.py b/src/flask/templating.py\nindex 005108cc..966083bb 100644\n--- a/src/flask/templating.py\n+++ b/src/flask/templating.py\n@@ -1,6 +1,9 @@\n from __future__ import annotations\n \n+import hashlib\n+from collections import OrderedDict\n+from functools import lru_cache\n from jinja2 import BaseLoader\n from jinja2 import Environment as BaseEnvironment\n from jinja2 import Template",
+    "test_patch": "diff --git a/tests/test_templating.py b/tests/test_templating.py\nindex 85549df0..849bca0a 100644\n--- a/tests/test_templating.py\n+++ b/tests/test_templating.py\n@@ -530,3 +530,58 @@ def test_custom_jinja_env():\n \n     app = CustomFlask(__name__)\n     assert isinstance(app.jinja_env, CustomEnvironment)\n+\n+\n+def test_template_cache_config_defaults(app):\n+    assert app.config[\"TEMPLATE_CACHE_MODE\"] == \"auto\"\n+    assert app.config[\"TEMPLATE_CACHE_SIZE\"] == 200\n+    assert app.config[\"TEMPLATE_HASH_ALGO\"] == \"md5\"",
+    "created_at": "2026-05-03T00:00:00.000000Z",
+    "environment_setup_commit": "",
+    "environment": {
+        "docker_image": "python:3.12-slim",
+        "cwd": "/work/testbed"
+    }
+}

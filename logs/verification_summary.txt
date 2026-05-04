@@ -1,0 +1,32 @@
+==================================================
+  VERIFICATION RESULTS SUMMARY
+==================================================
+
+Instance ID: flask_template_cache_enhancement
+Timestamp: 2026-05-03T23:47:36.687766
+
+PASS_TO_PASS tests: 5/5
+  PASS: tests/test_templating.py::TestTemplateCaching::test_config_defaults
+        验证默认配置值是否正确
+  PASS: tests/test_templating.py::TestTemplateCaching::test_lru_cache
+        验证 LRU 缓存功能是否正常
+  PASS: tests/test_templating.py::TestTemplateCaching::test_hashing_loader
+        验证哈希加载器是否正常
+  PASS: tests/test_templating.py::test_templates_auto_reload
+        验证模板自动重载功能是否正常（向后兼容）
+  PASS: tests/test_templating.py::test_custom_template_loader
+        验证自定义模板加载器是否正常（向后兼容）
+
+Overall verification: SUCCESS
+Success rate: 100.0%
+
+Environment:
+  Python: 3.9.12
+  Flask: 3.2.0.dev
+
+Changes Summary:
+  Files modified: 3
+  Lines added: 187
+  Lines removed: 0
+
+==================================================

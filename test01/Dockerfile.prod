@@ -1,0 +1,58 @@
+# ==============================================================================
+# SWE-bench Production Docker Image for Flask Framework
+# ==============================================================================
+
+# ------ Layer 1: Builder Image ------
+FROM python:3.12-slim as builder
+
+WORKDIR /work
+
+# Install build dependencies
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        build-essential \
+        && rm -rf /var/lib/apt/lists/*
+
+# Clone repository
+RUN git clone https://github.com/pallets/flask.git .
+
+# Create virtual environment
+RUN python -m venv /opt/testbed
+ENV PATH="/opt/testbed/bin:$PATH"
+
+# Install Flask and dependencies
+RUN pip install --upgrade pip
+RUN pip install -e .
+
+# ------ Layer 2: Production Image ------
+FROM python:3.12-slim
+
+WORKDIR /work
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/testbed /opt/testbed
+COPY --from=builder /work /work
+
+# Set environment variables
+ENV PATH="/opt/testbed/bin:$PATH"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_ENV=production
+ENV FLASK_APP=src.flask
+
+# Create non-root user
+RUN groupadd --gid 1000 flask && \
+    useradd --uid 1000 --gid flask --shell /bin/bash --create-home flask
+USER flask
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "from flask import Flask; print('Production health check passed')"
+
+# Run with Gunicorn
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "--timeout", "120", "src.flask:Flask('production')"]

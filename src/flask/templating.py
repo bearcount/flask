@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import typing as t
+from collections import OrderedDict
+from functools import lru_cache
 
 from jinja2 import BaseLoader
 from jinja2 import Environment as BaseEnvironment
@@ -16,6 +19,122 @@ from .signals import template_rendered
 if t.TYPE_CHECKING:  # pragma: no cover
     from .sansio.app import App
     from .sansio.scaffold import Scaffold
+
+
+class LRUTemplateCache:
+    """A size-limited LRU cache for Jinja2 templates."""
+
+    def __init__(self, max_size: int = 200) -> None:
+        self.max_size = max_size
+        self._cache: OrderedDict[str, tuple[str, float, str]] = OrderedDict()
+
+    def get(self, key: str) -> tuple[str, float, str] | None:
+        if key in self._cache:
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        return None
+
+    def set(self, key: str, source: str, mtime: float, content_hash: str) -> None:
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = (source, mtime, content_hash)
+        while len(self._cache) > self.max_size:
+            self._cache.popitem(last=False)
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+    def get_stats(self) -> dict[str, t.Any]:
+        return {
+            "size": len(self._cache),
+            "max_size": self.max_size,
+            "templates": list(self._cache.keys()),
+        }
+
+
+class HashingFileSystemLoader(BaseLoader):
+    """A Jinja2 file system loader that supports hash-based cache validation.
+
+    This loader computes a hash of the template file content to determine
+    if the cached version is still valid, rather than relying solely on mtime.
+    """
+
+    def __init__(
+        self,
+        searchpath: str | list[str],
+        encoding: str = "utf-8",
+        hash_algo: str = "md5",
+    ) -> None:
+        self.searchpath = searchpath
+        self.encoding = encoding
+        self.hash_algo = hash_algo
+
+    def get_source(
+        self, environment: BaseEnvironment, template: str
+    ) -> tuple[str, str | None, t.Callable[[], bool] | None]:
+        if isinstance(self.searchpath, str):
+            searchpaths = [self.searchpath]
+        else:
+            searchpaths = self.searchpath
+
+        for searchpath in searchpaths:
+            try:
+                from os.path import join
+                from os.path import isfile
+                import time
+
+                filename = join(searchpath, template)
+                if isfile(filename):
+                    with open(filename, "r", encoding=self.encoding) as f:
+                        source = f.read()
+
+                    mtime = isfile(filename) and time.localtime(filename).st_mtime or 0
+                    hash_func = getattr(hashlib, self.hash_algo)
+                    content_hash = hash_func(source.encode(self.encoding)).hexdigest()
+
+                    def check_uptodate(file_mtime: float = mtime, file_hash: str = content_hash) -> bool:
+                        try:
+                            import os
+                            current_mtime = os.path.getmtime(filename)
+                            if current_mtime != file_mtime:
+                                with open(filename, "r", encoding=self.encoding) as f:
+                                    current_source = f.read()
+                                current_hash = hash_func(current_source.encode(self.encoding)).hexdigest()
+                                return current_hash == file_hash
+                            return True
+                        except OSError:
+                            return False
+
+                    return source, filename, check_uptodate
+            except (IOError, OSError):
+                continue
+
+        raise TemplateNotFound(template)
+
+    def list_templates(self) -> list[str]:
+        found = set()
+        if isinstance(self.searchpath, str):
+            searchpaths = [self.searchpath]
+        else:
+            searchpaths = self.searchpath
+
+        for searchpath in searchpaths:
+            try:
+                from os import walk
+                from os.path import join
+
+                for dirpath, _, filenames in walk(searchpath):
+                    for filename in filenames:
+                        if filename.endswith((".html", ".htm", ".jinja", ".jinja2")):
+                            template = join(dirpath, filename)
+                            found.add(template[len(searchpath) + 1:].replace("\\", "/"))
+            except (IOError, OSError):
+                continue
+
+        return sorted(found)
 
 
 def _default_template_ctx_processor() -> dict[str, t.Any]:

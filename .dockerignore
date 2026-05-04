@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Development files
+.env
+.env.*
+.flaskenv
+.vscode/
+.idea/
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Documentation builds
+docs/_build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Misc
+*.log
+*.pot
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/

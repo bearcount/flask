@@ -1,0 +1,52 @@
+{
+  "instance_id": "flask_template_cache_enhancement",
+  "timestamp": "2026-05-03T23:47:36.687766",
+  "pass_to_pass": [
+    {
+      "test": "tests/test_templating.py::TestTemplateCaching::test_config_defaults",
+      "passed": true,
+      "status": "success",
+      "description": "验证默认配置值是否正确"
+    },
+    {
+      "test": "tests/test_templating.py::TestTemplateCaching::test_lru_cache",
+      "passed": true,
+      "status": "success",
+      "description": "验证 LRU 缓存功能是否正常"
+    },
+    {
+      "test": "tests/test_templating.py::TestTemplateCaching::test_hashing_loader",
+      "passed": true,
+      "status": "success",
+      "description": "验证哈希加载器是否正常"
+    },
+    {
+      "test": "tests/test_templating.py::test_templates_auto_reload",
+      "passed": true,
+      "status": "success",
+      "description": "验证模板自动重载功能是否正常（向后兼容）"
+    },
+    {
+      "test": "tests/test_templating.py::test_custom_template_loader",
+      "passed": true,
+      "status": "success",
+      "description": "验证自定义模板加载器是否正常（向后兼容）"
+    }
+  ],
+  "fail_to_pass": [],
+  "summary": {
+    "total_tests": 5,
+    "passed": 5,
+    "failed": 0,
+    "success_rate": 100.0
+  },
+  "environment": {
+    "python_version": "3.9.12 (tags/v3.9.12:b28265d, Mar 23 2022, 23:52:46) [MSC v.1929 64 bit (AMD64)]",
+    "flask_version": "3.2.0.dev"
+  },
+  "changes": {
+    "files_modified": 3,
+    "lines_added": 187,
+    "lines_removed": 0
+  }
+}

@@ -1,0 +1,36 @@
+{
+    "_comment": "Copy this file to instance.json and fill in your values",
+    "_see_also": "instance/README.md",
+
+    "SECRET_KEY": "CHANGE-ME-TO-A-RANDOM-SECRET-KEY",
+    "SECRET_KEY_FALLBACKS": [],
+
+    "DATABASE_URI": "sqlite:///instance/flaskr.db",
+
+    "SESSION_COOKIE_SECURE": false,
+    "SESSION_COOKIE_HTTPONLY": true,
+    "SESSION_COOKIE_SAMESITE": "Lax",
+    "PERMANENT_SESSION_LIFETIME": 2592000,
+
+    "DEBUG": false,
+    "TESTING": false,
+
+    "MAX_CONTENT_LENGTH": 16777216,
+
+    "TEMPLATE_CACHE_MODE": "auto",
+    "TEMPLATE_CACHE_SIZE": 200,
+    "TEMPLATE_HASH_ALGO": "md5",
+
+    "LOG_LEVEL": "INFO",
+
+    "UPLOAD_FOLDER": "instance/uploads",
+    "ALLOWED_EXTENSIONS": ["png", "jpg", "jpeg", "gif", "pdf"],
+    "MAX_UPLOAD_SIZE": 16777216,
+
+    "CACHE_TYPE": "simple",
+    "CACHE_DEFAULT_TIMEOUT": 300,
+
+    "TIMEZONE": "UTC",
+    "LANGUAGE": "en",
+    "ITEMS_PER_PAGE": 50
+}

@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  flask-testbed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flask-swe-bench
+    ports:
+      - "5000:5000"
+      - "8000:8000"
+    environment:
+      - FLASK_ENV=development
+      - FLASK_APP=src.flask
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./instance.json:/root/instance.json
+      - ./setup_env.sh:/root/setup_env.sh
+      - ./setup_repo.sh:/root/setup_repo.sh
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from flask import Flask; print('Healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  flask-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: flask-swe-bench-prod
+    ports:
+      - "8080:8000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=src.flask
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

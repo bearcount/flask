@@ -232,6 +232,9 @@ class Flask(App):
             "EXPLAIN_TEMPLATE_LOADING": False,
             "PREFERRED_URL_SCHEME": "http",
             "TEMPLATES_AUTO_RELOAD": None,
+            "TEMPLATE_CACHE_MODE": "auto",
+            "TEMPLATE_CACHE_SIZE": 200,
+            "TEMPLATE_HASH_ALGO": "md5",
             "MAX_COOKIE_SIZE": 4093,
             "PROVIDE_AUTOMATIC_OPTIONS": True,
         }
@@ -472,6 +475,11 @@ class Flask(App):
         :attr:`jinja_options` after this will have no effect. Also adds
         Flask-related globals and filters to the environment.
 
+        .. versionchanged:: 3.3
+           Added ``TEMPLATE_CACHE_MODE``, ``TEMPLATE_CACHE_SIZE``, and
+           ``TEMPLATE_HASH_ALGO`` configuration options for enhanced
+           template caching control.
+
         .. versionchanged:: 0.11
            ``Environment.auto_reload`` set in accordance with
            ``TEMPLATES_AUTO_RELOAD`` configuration option.
@@ -490,6 +498,22 @@ class Flask(App):
                 auto_reload = self.debug
 
             options["auto_reload"] = auto_reload
+
+        cache_mode = self.config.get("TEMPLATE_CACHE_MODE", "auto")
+        cache_size = self.config.get("TEMPLATE_CACHE_SIZE", 200)
+        hash_algo = self.config.get("TEMPLATE_HASH_ALGO", "md5")
+
+        if cache_mode == "hash" and self.jinja_loader is not None:
+            from .templating import HashingFileSystemLoader
+            from .templating import LRUTemplateCache
+            template_cache = LRUTemplateCache(max_size=cache_size)
+            options["loader"] = HashingFileSystemLoader(
+                searchpath=self.jinja_loader.searchpath
+                if hasattr(self.jinja_loader, "searchpath")
+                else str(self.jinja_loader),
+                encoding="utf-8",
+                hash_algo=hash_algo,
+            )
 
         rv = self.jinja_environment(self, **options)
         rv.globals.update(

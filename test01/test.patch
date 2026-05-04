@@ -1,0 +1,100 @@
+diff --git a/tests/test_helpers.py b/tests/test_helpers.py
+--- a/tests/test_helpers.py
++++ b/tests/test_helpers.py
+@@ -90,6 +90,86 @@ class TestSendfile:
+             rv.direct_passthrough = False
+             assert rv.data.strip() == b"Hello Subdomain"
+
++    def test_send_file_mimetype_detection(self, app, req_ctx):
++        """Test automatic MIME type detection from file extension.
++
++        This test verifies the documentation behavior for mimetype parameter.
++        When mimetype is not provided, it should be auto-detected from filename.
++        """
++        # Test HTML file detection (text/html)
++        with flask.send_file("static/index.html") as rv:
++            assert rv.mimetype == "text/html"
++
++        # Test plain text file detection (text/plain)
++        with flask.send_file("static/hello.txt") as rv:
++            assert rv.mimetype == "text/plain"
++
++    def test_send_file_explicit_mimetype_examples(self, app, req_ctx):
++        """Test explicit mimetype specification as shown in documentation.
++
++        This test verifies the examples from documentation showing how to
++        explicitly set MIME types for different file types, including:
++        - text/plain, text/html, application/json
++        - application/pdf, image/png, image/jpeg
++        - video/mp4, audio/mpeg, application/octet-stream
++        """
++        # Force octet-stream MIME type for unknown/custom files
++        with flask.send_file("static/index.html", mimetype="application/octet-stream") as rv:
++            assert rv.mimetype == "application/octet-stream"
++
++        # PDF MIME type for documents
++        with flask.send_file("static/index.html", mimetype="application/pdf") as rv:
++            assert rv.mimetype == "application/pdf"
++
++        # PNG image MIME type
++        with flask.send_file("static/index.html", mimetype="image/png") as rv:
++            assert rv.mimetype == "image/png"
++
++        # JSON MIME type for API responses
++        with flask.send_file("static/index.html", mimetype="application/json") as rv:
++            assert rv.mimetype == "application/json"
++
++        # HTML MIME type for web pages
++        with flask.send_file("static/index.html", mimetype="text/html") as rv:
++            assert rv.mimetype == "text/html"
++
++    def test_send_from_directory_with_mimetype(self, app, req_ctx):
++        """Test send_from_directory with explicit mimetype parameter.
++
++        This test verifies the documentation example for serving files
++        with specific MIME types, matching the code examples in docs.
++        """
++        app.root_path = os.path.join(
++            os.path.dirname(__file__), "test_apps", "subdomaintestmodule"
++        )
++
++        # Serve file with custom MIME type for unknown extensions
++        with flask.send_from_directory(
++            "static", "hello.txt", mimetype="application/octet-stream"
++        ) as rv:
++            rv.direct_passthrough = False
++            assert rv.data.strip() == b"Hello Subdomain"
++            assert rv.mimetype == "application/octet-stream"
++
++        # Force specific MIME type (e.g., PDF for browser display)
++        with flask.send_from_directory(
++            "static", "hello.txt", mimetype="application/pdf", as_attachment=False
++        ) as rv:
++            assert rv.mimetype == "application/pdf"
++
++    def test_send_from_directory_attachment_behavior(self, app, req_ctx):
++        """Test send_from_directory with as_attachment parameter.
++
++        This test verifies the documentation examples showing different
++        attachment behaviors for file downloads vs inline display.
++        """
++        app.root_path = os.path.join(
++            os.path.dirname(__file__), "test_apps", "subdomaintestmodule"
++        )
++
++        # Test as_attachment=True (force download)
++        with flask.send_from_directory(
++            "static", "hello.txt", as_attachment=True
++        ) as rv:
++            assert "attachment" in rv.headers.get("Content-Disposition", "")
++
++        # Test as_attachment=False (display in browser)
++        with flask.send_from_directory(
++            "static", "hello.txt", as_attachment=False
++        ) as rv:
++            disposition = rv.headers.get("Content-Disposition", "")
++            assert disposition == "" or "inline" in disposition
++
+
+ class TestUrlFor:
+     def test_url_for_with_anchor(self, app, req_ctx):

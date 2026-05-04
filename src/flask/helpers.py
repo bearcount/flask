@@ -447,8 +447,23 @@ def send_file(
         current working directory if a relative path is given.
         Alternatively, a file-like object opened in binary mode. Make
         sure the file pointer is seeked to the start of the data.
-    :param mimetype: The MIME type to send for the file. If not
-        provided, it will try to detect it from the file name.
+    :param mimetype: The MIME type to send for the file, for example
+        ``"image/png"`` or ``"application/pdf"``. If not provided, it will
+        try to detect it from the file name using the Python standard
+        library :mod:`mimetypes`. If the detection fails (e.g., for unknown
+        file extensions), it defaults to ``"application/octet-stream"``.
+
+        Common MIME types examples:
+
+        - ``"text/plain"`` - Plain text files
+        - ``"text/html"`` - HTML documents
+        - ``"application/json"`` - JSON data
+        - ``"application/pdf"`` - PDF documents
+        - ``"image/png"`` - PNG images
+        - ``"image/jpeg"`` - JPEG images
+        - ``"video/mp4"`` - MP4 videos
+        - ``"audio/mpeg"`` - MP3 audio files
+        - ``"application/octet-stream"`` - Binary files (default fallback)
     :param as_attachment: Indicate to a browser that it should offer to
         save the file instead of displaying it.
     :param download_name: The default name browsers will use when saving
@@ -547,14 +562,6 @@ def send_from_directory(
 ) -> Response:
     """Send a file from within a directory using :func:`send_file`.
 
-    .. code-block:: python
-
-        @app.route("/uploads/<path:name>")
-        def download_file(name):
-            return send_from_directory(
-                app.config['UPLOAD_FOLDER'], name, as_attachment=True
-            )
-
     This is a secure way to serve files from a folder, such as static
     files or uploads. Uses :func:`~werkzeug.security.safe_join` to
     ensure the path coming from the client is not maliciously crafted to
@@ -563,12 +570,55 @@ def send_from_directory(
     If the final path does not point to an existing regular file,
     raises a 404 :exc:`~werkzeug.exceptions.NotFound` error.
 
+    Basic example for file downloads:
+
+    .. code-block:: python
+
+        @app.route("/uploads/<path:name>")
+        def download_file(name):
+            return send_from_directory(
+                app.config['UPLOAD_FOLDER'], name, as_attachment=True
+            )
+
+    Serving static files with specific MIME types:
+
+    .. code-block:: python
+
+        @app.route("/documents/<path:filename>")
+        def serve_document(filename):
+            # Force PDF files to be displayed in browser instead of downloaded
+            if filename.endswith('.pdf'):
+                return send_from_directory(
+                    app.config['DOCS_FOLDER'],
+                    filename,
+                    mimetype="application/pdf",
+                    as_attachment=False
+                )
+            return send_from_directory(
+                app.config['DOCS_FOLDER'], filename
+            )
+
+    Serving files with custom MIME types for unknown extensions:
+
+    .. code-block:: python
+
+        @app.route("/data/<path:filename>")
+        def serve_data(filename):
+            # Serve custom file types with proper MIME type
+            return send_from_directory(
+                app.config['DATA_FOLDER'],
+                filename,
+                mimetype="application/octet-stream"
+            )
+
     :param directory: The directory that ``path`` must be located under,
         relative to the current application's root path. This *must not*
         be a value provided by the client, otherwise it becomes insecure.
     :param path: The path to the file to send, relative to
         ``directory``.
     :param kwargs: Arguments to pass to :func:`send_file`.
+        See :func:`send_file` for details on parameters like
+        ``mimetype``, ``as_attachment``, ``download_name``, etc.
 
     .. versionchanged:: 2.0
         ``path`` replaces the ``filename`` parameter.

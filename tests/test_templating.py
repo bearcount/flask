@@ -530,3 +530,161 @@ def test_custom_jinja_env():
 
     app = CustomFlask(__name__)
     assert isinstance(app.jinja_env, CustomEnvironment)
+
+
+def test_template_cache_config_defaults(app):
+    assert app.config["TEMPLATE_CACHE_MODE"] == "auto"
+    assert app.config["TEMPLATE_CACHE_SIZE"] == 200
+    assert app.config["TEMPLATE_HASH_ALGO"] == "md5"
+
+
+def test_template_cache_mode_config(app):
+    app.config["TEMPLATE_CACHE_MODE"] = "hash"
+    assert app.config["TEMPLATE_CACHE_MODE"] == "hash"
+
+    app.config["TEMPLATE_CACHE_MODE"] = "always"
+    assert app.config["TEMPLATE_CACHE_MODE"] == "always"
+
+    app.config["TEMPLATE_CACHE_MODE"] = "never"
+    assert app.config["TEMPLATE_CACHE_MODE"] == "never"
+
+    app.config["TEMPLATE_CACHE_MODE"] = "auto"
+    assert app.config["TEMPLATE_CACHE_MODE"] == "auto"
+
+
+def test_template_cache_size_config(app):
+    app.config["TEMPLATE_CACHE_SIZE"] = 100
+    assert app.config["TEMPLATE_CACHE_SIZE"] == 100
+
+    app.config["TEMPLATE_CACHE_SIZE"] = 500
+    assert app.config["TEMPLATE_CACHE_SIZE"] == 500
+
+
+def test_template_hash_algo_config(app):
+    app.config["TEMPLATE_HASH_ALGO"] = "sha256"
+    assert app.config["TEMPLATE_HASH_ALGO"] == "sha256"
+
+    app.config["TEMPLATE_HASH_ALGO"] = "sha1"
+    assert app.config["TEMPLATE_HASH_ALGO"] == "sha1"
+
+
+def test_lru_template_cache():
+    from flask.templating import LRUTemplateCache
+
+    cache = LRUTemplateCache(max_size=3)
+
+    assert len(cache) == 0
+    assert cache.get("test") is None
+
+    cache.set("template1.html", "content1", 1234567890.0, "hash1")
+    assert len(cache) == 1
+    assert cache.get("template1.html") == ("content1", 1234567890.0, "hash1")
+
+    cache.set("template2.html", "content2", 1234567891.0, "hash2")
+    cache.set("template3.html", "content3", 1234567892.0, "hash3")
+    assert len(cache) == 3
+
+    cache.set("template4.html", "content4", 1234567893.0, "hash4")
+    assert len(cache) == 3
+    assert cache.get("template1.html") is None
+    assert cache.get("template4.html") == ("content4", 1234567893.0, "hash4")
+
+    cache.clear()
+    assert len(cache) == 0
+
+
+def test_lru_template_cache_stats():
+    from flask.templating import LRUTemplateCache
+
+    cache = LRUTemplateCache(max_size=10)
+    cache.set("template1.html", "content1", 1234567890.0, "hash1")
+    cache.set("template2.html", "content2", 1234567891.0, "hash2")
+
+    stats = cache.get_stats()
+    assert stats["size"] == 2
+    assert stats["max_size"] == 10
+    assert "template1.html" in stats["templates"]
+    assert "template2.html" in stats["templates"]
+
+
+def test_lru_template_cache_lru_order():
+    from flask.templating import LRUTemplateCache
+
+    cache = LRUTemplateCache(max_size=3)
+    cache.set("a.html", "content_a", 1.0, "hash_a")
+    cache.set("b.html", "content_b", 2.0, "hash_b")
+    cache.set("c.html", "content_c", 3.0, "hash_c")
+
+    cache.get("a.html")
+    cache.set("d.html", "content_d", 4.0, "hash_d")
+
+    assert cache.get("b.html") is None
+    assert cache.get("a.html") is not None
+    assert cache.get("c.html") is not None
+    assert cache.get("d.html") is not None
+
+
+def test_hashing_file_system_loader_init():
+    from flask.templating import HashingFileSystemLoader
+
+    loader = HashingFileSystemLoader("/path/to/templates")
+    assert loader.searchpath == "/path/to/templates"
+    assert loader.encoding == "utf-8"
+    assert loader.hash_algo == "md5"
+
+    loader = HashingFileSystemLoader(
+        searchpath="/path/to/templates",
+        encoding="latin-1",
+        hash_algo="sha256"
+    )
+    assert loader.searchpath == "/path/to/templates"
+    assert loader.encoding == "latin-1"
+    assert loader.hash_algo == "sha256"
+
+
+def test_hashing_file_system_loader_list_templates(tmp_path):
+    from flask.templating import HashingFileSystemLoader
+
+    (tmp_path / "test.html").write_text("<h1>Test</h1>")
+    (tmp_path / "test.htm").write_text("<h2>Test</h2>")
+    (tmp_path / "test.jinja").write_text("<h3>Test</h3>")
+    (tmp_path / "test.jinja2").write_text("<h4>Test</h4>")
+    (tmp_path / "test.txt").write_text("Plain text")
+
+    loader = HashingFileSystemLoader(str(tmp_path))
+    templates = loader.list_templates()
+
+    assert "test.html" in templates
+    assert "test.htm" in templates
+    assert "test.jinja" in templates
+    assert "test.jinja2" in templates
+    assert "test.txt" not in templates
+
+
+def test_hashing_file_system_loader_list_templates_nested(tmp_path):
+    from flask.templating import HashingFileSystemLoader
+
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    (tmp_path / "base.html").write_text("<h1>Base</h1>")
+    (subdir / "nested.html").write_text("<h1>Nested</h1>")
+
+    loader = HashingFileSystemLoader(str(tmp_path))
+    templates = loader.list_templates()
+
+    assert "base.html" in templates
+    assert "subdir/nested.html" in templates
+
+
+def test_hash_mode_uses_hashing_loader(app, tmp_path):
+    app.config["TEMPLATE_CACHE_MODE"] = "hash"
+    app.config["TEMPLATES_AUTO_RELOAD"] = False
+
+    (tmp_path / "templates").mkdir(exist_ok=True)
+    app.template_folder = str(tmp_path / "templates")
+
+    template_path = tmp_path / "templates" / "test.html"
+    template_path.write_text("<h1>{{ name }}</h1>")
+
+    env = app.create_jinja_environment()
+    assert env.auto_reload is False
