@@ -1,8 +1,8 @@
 {
     "instance_id": "flask_template_cache_enhancement",
     "repo": "https://github.com/pallets/flask",
-    "base_commit": "1f949e8347dd8f9cc6f0af1d67cfb8abfb71468d",
-    "head_commit": "159810874f5273a508d10083624fe4d91714ba58",
+    "base_commit": "8da60ec89d994454d41763878914812831afb84b",
+    "head_commit": "e7027c59db1abdc7ac7894d26ece85a816afcc21",
     "language": "python",
     "task_category": "feature_addition",
     "problem_statement": "# 功能要求\n1. 增强 Flask 模板缓存配置选项\n2. 当前 TEMPLATES_AUTO_RELOAD 配置过于简单，无法满足生产环境的细粒度需求\n3. 新增配置项：\n   - TEMPLATE_CACHE_MODE (auto/hash/always/never)\n   - TEMPLATE_CACHE_SIZE (缓存大小限制)\n   - TEMPLATE_HASH_ALGO (内容哈希算法)\n4. 新增模板加载器：HashingFileSystemLoader，支持基于内容哈希的缓存验证\n5. 新增 LRU 缓存：LRUTemplateCache，支持大小限制的缓存\n6. 确保向后兼容，不破坏现有功能",
