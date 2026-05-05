@@ -1,0 +1,81 @@
+# ==============================================================================
+# Flask CSRF Protection - Docker Compose Configuration
+# ==============================================================================
+# Usage:
+#   docker-compose up -d
+#   docker-compose down
+
+version: '3.8'
+
+services:
+  # Flask Application with CSRF Protection
+  flask-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flask-csrf-app
+    ports:
+      - "5000:5000"
+    environment:
+      # Flask Configuration
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+
+      # CSRF Protection Settings
+      - CSRF_ENABLED=true
+      - CSRF_COOKIE_NAME=csrf_token
+      - CSRF_HEADER_NAME=X-CSRF-Token
+      - CSRF_COOKIE_SECURE=false  # Set to true in production with HTTPS
+      - CSRF_COOKIE_SAMESITE=Lax
+      - CSRF_COOKIE_HTTPONLY=false
+      - CSRF_TRUSTED_ORIGINS=http://localhost:5000,https://example.com
+
+      # Python Settings
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - flask-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "from flask import Flask; print('Healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for session storage (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: flask-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - flask-network
+    command: redis-server --appendonly yes
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: flask-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - flask-app
+    restart: unless-stopped
+    networks:
+      - flask-network
+
+networks:
+  flask-network:
+    driver: bridge
+
+volumes:
+  redis-data:

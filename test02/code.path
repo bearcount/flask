@@ -1,0 +1,490 @@
+From: Developer <dev@example.com>
+Date: Mon, 4 May 2026 00:00:00 +0800
+Subject: [PATCH] Add built-in CSRF protection mechanism
+
+This patch adds native CSRF protection to Flask, providing:
+- Double-submit cookie pattern
+- Origin/Referer header validation
+- Template integration with csrf_token() and csrf_input()
+- Configurable exempt routes
+- Secure defaults (SameSite=Lax, Secure=True)
+
+---
+ src/flask/__init__.py   |   4 +
+ src/flask/app.py        |  12 ++
+ src/flask/csrf.py       | 287 ++++++++++++++++++++++++++++++++++++++++
+ src/flask/templating.py |   8 ++
+ 4 files changed, 311 insertions(+)
+ create mode 100644 src/flask/csrf.py
+
+diff --git a/src/flask/__init__.py b/src/flask/__init__.py
+index abcdef1..1234567 100644
+--- a/src/flask/__init__.py
++++ b/src/flask/__init__.py
+@@ -1,5 +1,8 @@
+ from . import json as json
+ from .app import Flask as Flask
+ from .blueprints import Blueprint as Blueprint
+ from .config import Config as Config
++from .csrf import CSRFProtect as CSRFProtect
++from .csrf import CSRFError as CSRFError
++from .csrf import csrf_token as csrf_token
+ from .ctx import after_this_request as after_this_request
+ from .ctx import copy_current_request_context as copy_current_request_context
+ from .ctx import has_app_context as has_app_context
+ from .ctx import has_request_context as has_request_context
+ from .globals import current_app as current_app
+ from .globals import g as g
+ from .globals import request as request
+ from .globals import session as session
+ from .helpers import abort as abort
+ from .helpers import flash as flash
+ from .helpers import get_flashed_messages as get_flashed_messages
+ from .helpers import get_template_attribute as get_template_attribute
+ from .helpers import make_response as make_response
+ from .helpers import redirect as redirect
+ from .helpers import send_file as send_file
+ from .helpers import send_from_directory as send_from_directory
+ from .helpers import stream_with_context as stream_with_context
+ from .helpers import url_for as url_for
+ from .json import jsonify as jsonify
+ from .signals import appcontext_popped as appcontext_popped
+ from .signals import appcontext_pushed as appcontext_pushed
+ from .signals import appcontext_tearing_down as appcontext_tearing_down
+ from .signals import before_render_template as before_render_template
+ from .signals import got_request_exception as got_request_exception
+ from .signals import message_flashed as message_flashed
+ from .signals import request_finished as request_finished
+ from .signals import request_started as request_started
+ from .signals import request_tearing_down as request_tearing_down
+ from .signals import template_rendered as template_rendered
+ from .templating import render_template as render_template
+ from .templating import render_template_string as render_template_string
+ from .templating import stream_template as stream_template
+ from .templating import stream_template_string as stream_template_string
+ from .wrappers import Request as Request
+ from .wrappers import Response as Response
+
+diff --git a/src/flask/app.py b/src/flask/app.py
+index abcdef2..2345678 100644
+--- a/src/flask/app.py
++++ b/src/flask/app.py
+@@ -15,6 +15,7 @@ from werkzeug.wsgi import get_host
+ from . import cli
+ from . import typing as ft
+ from .ctx import AppContext
++from .csrf import CSRFProtect
+ from .globals import _cv_app
+ from .globals import app_ctx
+ from .globals import g
+@@ -95,6 +96,8 @@ class Flask(App):
+         "logger": logger,
+         "permanent_session_lifetime": permanent_session_lifetime,
+     }
++    #: CSRF protection instance
++    csrf: CSRFProtect | None = None
+
+     def __init__(
+         self,
+@@ -130,6 +133,15 @@ class Flask(App):
+         #: Click command group for CLI commands
+         self.cli = cli.AppGroup()
+
++    def enable_csrf(self, **kwargs: t.Any) -> CSRFProtect:
++        """Enable CSRF protection for this application.
++
++        :param kwargs: Configuration options passed to CSRFProtect
++        :return: The CSRFProtect instance
++        """
++        self.csrf = CSRFProtect(self, **kwargs)
++        return self.csrf
++
+     def get_send_file_max_age(self, filename: str | None) -> int | None:
+         """Get the max age for sending files."""
+         value = self.config["SEND_FILE_MAX_AGE_DEFAULT"]
+
+diff --git a/src/flask/csrf.py b/src/flask/csrf.py
+new file mode 100644
+index 0000000..abcdef3
+--- /dev/null
++++ b/src/flask/csrf.py
+@@ -0,0 +1,287 @@
++from __future__ import annotations
++
++import functools
++import hmac
++import secrets
++import typing as t
++from urllib.parse import urlparse
++
++from werkzeug.exceptions import Forbidden
++
++from .globals import current_app
++from .globals import request
++from .signals import request_started
++
++if t.TYPE_CHECKING:
++    from .app import Flask
++    from .wrappers import Response
++
++
++class CSRFError(Forbidden):
++    """Raised when CSRF validation fails.
++
++    Inherits from werkzeug.exceptions.Forbidden (HTTP 403).
++    """
++    description = "CSRF validation failed."
++
++
++class CSRFProtect:
++    """Enable CSRF protection for Flask applications.
++
++    Implements the double-submit cookie pattern for CSRF protection.
++    The token is stored in a cookie and must be submitted in the request
++    via header, form field, or JSON body.
++
++    Example usage::
++
++        from flask import Flask
++
++        app = Flask(__name__)
++        app.config['SECRET_KEY'] = 'your-secret-key'
++        app.config['CSRF_TRUSTED_ORIGINS'] = ['https://example.com']
++
++        # Enable CSRF protection
++        csrf = app.enable_csrf()
++
++        @app.route('/form', methods=['GET', 'POST'])
++        def form():
++            if request.method == 'POST':
++                # CSRF is automatically validated
++                return 'Success!'
++            return render_template('form.html')
++
++    :param app: The Flask application instance
++    :param cookie_name: Name of the CSRF token cookie
++    :param header_name: Header name for CSRF token
++    :param field_name: Form field name for CSRF token
++    :param cookie_secure: Whether to set Secure flag on cookie
++    :param cookie_samesite: SameSite attribute for cookie ('Strict', 'Lax', or 'None')
++    :param cookie_httponly: Whether to set HttpOnly flag (usually False for CSRF)
++    :param skip_methods: HTTP methods that don't require CSRF check
++    :param exempt_routes: List of endpoint names to exempt from CSRF
++    """
++
++    def __init__(
++        self,
++        app: Flask | None = None,
++        cookie_name: str = "csrf_token",
++        header_name: str = "X-CSRF-Token",
++        field_name: str = "csrf_token",
++        cookie_secure: bool = True,
++        cookie_samesite: str = "Lax",
++        cookie_httponly: bool = False,
++        skip_methods: frozenset[str] | None = None,
++        exempt_routes: list[str] | None = None,
++    ) -> None:
++        self.cookie_name = cookie_name
++        self.header_name = header_name
++        self.field_name = field_name
++        self.cookie_secure = cookie_secure
++        self.cookie_samesite = cookie_samesite
++        self.cookie_httponly = cookie_httponly
++        self.skip_methods = skip_methods or frozenset(["GET", "HEAD", "OPTIONS", "TRACE"])
++        self.exempt_routes: set[str] = set(exempt_routes or [])
++        self._app: Flask | None = None
++        self._error_handler: t.Callable[[CSRFError], t.Any] | None = None
++
++        if app is not None:
++            self.init_app(app)
++
++    def init_app(self, app: Flask) -> None:
++        """Initialize CSRF protection with the Flask application.
++
++        :param app: The Flask application instance
++        """
++        self._app = app
++
++        # Store configuration in app config
++        app.config.setdefault("CSRF_ENABLED", True)
++        app.config.setdefault("CSRF_COOKIE_NAME", self.cookie_name)
++        app.config.setdefault("CSRF_HEADER_NAME", self.header_name)
++        app.config.setdefault("CSRF_FIELD_NAME", self.field_name)
++        app.config.setdefault("CSRF_COOKIE_SECURE", self.cookie_secure)
++        app.config.setdefault("CSRF_COOKIE_SAMESITE", self.cookie_samesite)
++        app.config.setdefault("CSRF_COOKIE_HTTPONLY", self.cookie_httponly)
++        app.config.setdefault("CSRF_TRUSTED_ORIGINS", [])
++
++        # Connect to request signals
++        request_started.connect(self._on_request_started, app)
++        app.before_request(self._validate_request)
++        app.after_request(self._set_cookie)
++
++    def _on_request_started(self, sender: Flask, **extra: t.Any) -> None:
++        """Generate CSRF token at the start of each request."""
++        if not self._should_generate_token():
++            return
++
++        token = request.cookies.get(self.cookie_name)
++        if not token:
++            token = self._generate_token()
++
++        # Store token in request context for later use
++        request._csrf_token = token  # type: ignore[attr-defined]
++
++    def _generate_token(self) -> str:
++        """Generate a cryptographically secure CSRF token.
++
++        Uses secrets module for CSPRNG.
++
++        :return: URL-safe base64-encoded token string
++        """
++        return secrets.token_urlsafe(32)
++
++    def _set_cookie(self, response: Response) -> Response:
++        """Set CSRF token cookie on response.
++
++        :param response: The Flask response object
++        :return: Modified response with CSRF cookie
++        """
++        if not hasattr(request, '_csrf_token'):
++            return response
++
++        response.set_cookie(
++            self.cookie_name,
++            request._csrf_token,
++            secure=self.cookie_secure,
++            samesite=self.cookie_samesite,
++            httponly=self.cookie_httponly,
++        )
++        return response
++
++    def _should_generate_token(self) -> bool:
++        """Determine if CSRF token should be generated for this request."""
++        if not self._app or not self._app.config.get("CSRF_ENABLED", True):
++            return False
++        return True
++
++    def _should_check(self) -> bool:
++        """Determine if CSRF check should be performed for this request.
++
++        Skips check for:
++        - Safe HTTP methods (GET, HEAD, OPTIONS, TRACE)
++        - Exempt routes
++        - When CSRF is disabled
++        """
++        if not self._app or not self._app.config.get("CSRF_ENABLED", True):
++            return False
++
++        if request.method in self.skip_methods:
++            return False
++
++        if request.endpoint and request.endpoint in self.exempt_routes:
++            return False
++
++        return True
++
++    def _validate_request(self) -> None:
++        """Validate CSRF token from the current request.
++
++        Raises CSRFError if validation fails.
++        """
++        if not self._should_check():
++            return
++
++        try:
++            self.validate()
++        except CSRFError as e:
++            if self._error_handler:
++                return self._error_handler(e)
++            raise
++
++    def validate(self) -> bool:
++        """Validate CSRF token from request.
++
++        Checks for token in order:
++        1. Custom header (X-CSRF-Token)
++        2. Form field (csrf_token)
++        3. JSON body field
++
++        Then validates:
++        - Token matches cookie value (double-submit pattern)
++        - Origin/Referer header (if configured)
++
++        :return: True if valid
++        :raises CSRFError: If validation fails
++        """
++        cookie_token = request.cookies.get(self.cookie_name)
++        if not cookie_token:
++            raise CSRFError("CSRF cookie missing.")
++
++        # Extract token from request
++        submitted_token = self._get_submitted_token()
++
++        if not submitted_token:
++            raise CSRFError("CSRF token missing.")
++
++        # Constant-time comparison to prevent timing attacks
++        if not hmac.compare_digest(cookie_token, submitted_token):
++            raise CSRFError("CSRF token mismatch.")
++
++        # Validate Origin/Referer for additional security
++        self._validate_origin()
++
++        return True
++
++    def _get_submitted_token(self) -> str | None:
++        """Extract CSRF token from request.
++
++        Checks header, form data, and JSON body.
++
++        :return: The submitted token or None
++        """
++        # Check header first
++        token = request.headers.get(self.header_name)
++        if token:
++            return token
++
++        # Check form data
++        token = request.form.get(self.field_name)
++        if token:
++            return token
++
++        # Check JSON body
++        if request.is_json:
++            json_data = request.get_json(silent=True) or {}
++            token = json_data.get(self.field_name)
++            if token:
++                return str(token)
++
++        return None
++
++    def _validate_origin(self) -> None:
++        """Validate Origin or Referer header.
++
++        If CSRF_TRUSTED_ORIGINS is configured, validates that the
++        request comes from an allowed origin.
++
++        :raises CSRFError: If origin is not trusted
++        """
++        if not self._app:
++            return
++
++        trusted_origins = self._app.config.get("CSRF_TRUSTED_ORIGINS", [])
++        if not trusted_origins:
++            return
++
++        origin = request.headers.get("Origin")
++        referer = request.headers.get("Referer")
++
++        if origin:
++            if origin not in trusted_origins:
++                raise CSRFError(f"Untrusted origin: {origin}")
++        elif referer:
++            parsed = urlparse(referer)
++            referer_origin = f"{parsed.scheme}://{parsed.netloc}"
++            if referer_origin not in trusted_origins:
++                raise CSRFError(f"Untrusted referer: {referer_origin}")
++        elif request.is_secure:
++            # For HTTPS requests, Origin or Referer should be present
++            # This is a stricter check that can be disabled if needed
++            pass  # Allow for now, but could be made configurable
++
++    def exempt(self, f: t.Callable[..., t.Any]) -> t.Callable[..., t.Any]:
++        """Decorator to exempt a view function from CSRF protection.
++
++        Example::
++
++            @app.route('/api/webhook', methods=['POST'])
++            @csrf.exempt
++            def webhook():
++                # CSRF check is skipped
++                return 'OK'
++
++        :param f: The view function to exempt
++        :return: The decorated function
++        """
++        if hasattr(f, '__name__'):
++            self.exempt_routes.add(f.__name__)
++        return f
++
++    def error_handler(
++        self, f: t.Callable[[CSRFError], t.Any]
++    ) -> t.Callable[[CSRFError], t.Any]:
++        """Register a custom error handler for CSRF errors.
++
++        Example::
++
++            @csrf.error_handler
++            def handle_csrf_error(e):
++                return {'error': 'CSRF validation failed'}, 400
++
++        :param f: Error handler function
++        :return: The handler function
++        """
++        self._error_handler = f
++        return f
++
++
++def generate_csrf() -> str:
++    """Generate or retrieve CSRF token for current request.
++
++    Use in templates to get the current CSRF token value.
++
++    :return: The CSRF token string
++    """
++    token = getattr(request, '_csrf_token', None)
++    if token is None:
++        # Generate new token if none exists
++        token = secrets.token_urlsafe(32)
++        request._csrf_token = token  # type: ignore[attr-defined]
++    return token
++
++
++def csrf_token() -> str:
++    """Generate HTML hidden input field with CSRF token.
++
++    Use in templates::
++
++        <form method="POST">
++            {{ csrf_input() }}
++            <input type="text" name="username">
++            <button type="submit">Submit</button>
++        </form>
++
++    :return: HTML input element string
++    """
++    token = generate_csrf()
++    return f'<input type="hidden" name="csrf_token" value="{token}">'
++
++
++# Alias for backward compatibility
++csrf_input = csrf_token
+
+diff --git a/src/flask/templating.py b/src/flask/templating.py
+index abcdef4..3456789 100644
+--- a/src/flask/templating.py
++++ b/src/flask/templating.py
+@@ -10,6 +10,7 @@ from jinja2 import TemplateNotFound
+ from .ctx import AppContext
+ from .globals import app_ctx
+ from .helpers import stream_with_context
++from .csrf import generate_csrf, csrf_token, csrf_input
+ from .signals import before_render_template
+ from .signals import template_rendered
+
+@@ -140,6 +141,13 @@ def _default_template_ctx_processor() -> dict[str, t.Any]:
+     ctx = app_ctx._get_current_object()
+     rv: dict[str, t.Any] = {"g": ctx.g}
+
++    # Add CSRF token helpers if CSRF is enabled
++    if hasattr(ctx.app, 'csrf') and ctx.app.csrf is not None:
++        rv["csrf_token_value"] = generate_csrf
++        rv["csrf_token"] = csrf_token
++        rv["csrf_input"] = csrf_input
++
+     if ctx.has_request:
+         rv["request"] = ctx.request
+         # The session proxy cannot be replaced, accessing it gets
+--
+2.40.0

@@ -1,0 +1,26 @@
+# Flask CSRF Protection - Production Requirements
+# Flask framework (with CSRF enhancement)
+flask>=3.2.0
+
+# WSGI server
+gunicorn>=21.0.0
+
+# Security
+itsdangerous>=2.1.0
+cryptography>=41.0.0
+
+# Session management (optional Redis support)
+redis>=5.0.0
+flask-session>=0.5.0
+
+# Monitoring and logging
+structlog>=23.0.0
+sentry-sdk>=1.30.0
+
+# Production utilities
+python-dotenv>=1.0.0
+
+# Testing (for CI/CD)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-xdist>=3.3.0

@@ -1,0 +1,101 @@
+{
+  "instance_id": "flask_csrf_enhancement_001",
+  "repo": "https://github.com/pallets/flask",
+  "base_commit": "741e031216a7a6c9f56a65b4cb9a8a0df6ed9db3",
+  "head_commit": "159810874f5273a508d10083624fe4d91714ba58",
+  "language": "python",
+  "version": "3.2.0",
+  "task_category": "security_enhancement",
+  "title": "CSRF Protection Enhancement",
+  "description": "Add built-in CSRF protection mechanism to Flask with double-submit cookie pattern, Origin/Referer validation, and template integration",
+  "problem_statement": "# CSRF 防护增强\n\n## 问题描述\n当前 Flask 的 CSRF 防护机制较为基础，开发者需要依赖第三方扩展（如 Flask-WTF）来实现完整的 CSRF 保护。这增加了应用开发的复杂性，且不同扩展之间的兼容性问题可能导致安全隐患。\n\n## 期望功能\n1. 内置 CSRF 防护机制，无需额外依赖\n2. 实现双重提交 Cookie 模式（double-submit cookie pattern）\n3. 支持 Origin/Referer 头验证\n4. 模板集成：提供 csrf_token() 和 csrf_input() 函数\n5. 可配置的路由豁免\n6. 安全默认值（SameSite=Lax, Secure=True）\n\n## 实现方案\n- 新增 src/flask/csrf.py 模块\n- 修改 src/flask/app.py 添加 enable_csrf() 方法\n- 修改 src/flask/templating.py 添加模板全局函数\n- 修改 src/flask/__init__.py 导出相关类\n\n## 配置选项\n- CSRF_ENABLED: 是否启用 CSRF 防护\n- CSRF_COOKIE_NAME: Cookie 名称（默认：csrf_token）\n- CSRF_HEADER_NAME: 请求头名称（默认：X-CSRF-Token）\n- CSRF_COOKIE_SECURE: Secure 标志\n- CSRF_COOKIE_SAMESITE: SameSite 属性\n- CSRF_TRUSTED_ORIGINS: 可信来源列表",
+  "FAIL_TO_PASS": [
+    "tests/test_csrf.py::TestCSRFProtect::test_csrf_enabled_by_default",
+    "tests/test_csrf.py::TestCSRFValidation::test_post_without_token_fails",
+    "tests/test_csrf.py::TestOriginValidation::test_untrusted_origin_blocked",
+    "tests/test_csrf.py::TestTemplateIntegration::test_csrf_input_in_template"
+  ],
+  "PASS_TO_PASS": [
+    "tests/test_csrf.py::TestCSRFProtect::test_initialization",
+    "tests/test_csrf.py::TestTokenGeneration::test_token_format",
+    "tests/test_csrf.py::TestSafeMethods::test_get_request_exempt",
+    "tests/test_csrf.py::TestCSRFValidation::test_post_with_token_succeeds"
+  ],
+  "patch": "code.patch",
+  "test_patch": "test.patch",
+  "created_at": "2026-05-04T00:00:00.000000Z",
+  "environment": {
+    "docker_image": "python:3.12-slim",
+    "cwd": "/work/testbed"
+  },
+  "configuration": {
+    "csrf_enabled": true,
+    "csrf_cookie_name": "csrf_token",
+    "csrf_header_name": "X-CSRF-Token",
+    "csrf_field_name": "csrf_token",
+    "csrf_cookie_secure": true,
+    "csrf_cookie_samesite": "Lax",
+    "csrf_cookie_httponly": false,
+    "csrf_trusted_origins": [],
+    "skip_methods": ["GET", "HEAD", "OPTIONS", "TRACE"]
+  },
+  "features": {
+    "double_submit_cookie": {
+      "enabled": true,
+      "description": "Token stored in cookie must match token submitted in request",
+      "implementation": "secrets.token_urlsafe(32)"
+    },
+    "origin_validation": {
+      "enabled": true,
+      "description": "Validates Origin or Referer header against trusted origins list"
+    },
+    "template_integration": {
+      "enabled": true,
+      "functions": [
+        "csrf_token() - Generate HTML hidden input field",
+        "csrf_input() - Alias for csrf_token()",
+        "generate_csrf() - Get raw token value"
+      ]
+    },
+    "exempt_routes": {
+      "enabled": true,
+      "description": "Decorator to exempt specific routes from CSRF protection"
+    }
+  },
+  "usage_examples": {
+    "basic_setup": {
+      "code": "from flask import Flask\n\napp = Flask(__name__)\napp.config['SECRET_KEY'] = 'your-secret-key'\ncsrf = app.enable_csrf()"
+    },
+    "form_template": {
+      "jinja2": "<form method=\"POST\">\n    {{ csrf_token() }}\n    <input type=\"text\" name=\"username\">\n    <button type=\"submit\">Submit</button>\n</form>"
+    },
+    "api_request": {
+      "javascript": "fetch('/api/data', {\n    method: 'POST',\n    headers: {\n        'X-CSRF-Token': getCookie('csrf_token')\n    },\n    body: JSON.stringify(data)\n});"
+    },
+    "exempt_route": {
+      "code": "@app.route('/webhook', methods=['POST'])\n@csrf.exempt\ndef webhook():\n    return 'OK'"
+    }
+  },
+  "security_considerations": [
+    "使用 secrets.token_urlsafe() 生成加密安全的令牌",
+    "使用 hmac.compare_digest() 进行恒定时间比较，防止时序攻击",
+    "默认启用 Secure 标志，要求 HTTPS",
+    "默认 SameSite=Lax，防止跨站请求",
+    "支持配置可信来源列表进行额外验证"
+  ],
+  "test_coverage": {
+    "total_tests": 35,
+    "categories": [
+      "初始化测试",
+      "令牌生成测试",
+      "CSRF 验证测试",
+      "安全方法豁免测试",
+      "路由豁免测试",
+      "来源验证测试",
+      "Cookie 设置测试",
+      "模板集成测试",
+      "错误处理测试",
+      "集成测试"
+    ]
+  }
+}
