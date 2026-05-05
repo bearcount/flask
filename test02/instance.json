@@ -2,7 +2,7 @@
   "instance_id": "flask_csrf_enhancement_001",
   "repo": "https://github.com/pallets/flask",
   "base_commit": "741e031216a7a6c9f56a65b4cb9a8a0df6ed9db3",
-  "head_commit": "159810874f5273a508d10083624fe4d91714ba58",
+  "head_commit": "f456550ae242966e2dc50194478ad5a86db9b238",
   "language": "python",
   "version": "3.2.0",
   "task_category": "security_enhancement",
